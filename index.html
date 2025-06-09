@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Filminize</title>
+  <style>
+    :root {
+      --bg: #000;
+      --text: #ffcc00;
+      --card: #111;
+      --button-bg: #ffcc00;
+      --button-text: #000;
+    }
+    [data-theme="light"] {
+      --bg: #fff;
+      --text: #000;
+      --card: #f4f4f4;
+      --button-bg: #000;
+      --button-text: #fff;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 2.5rem;
+      margin-bottom: 20px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    input, select, button {
+      padding: 10px;
+      font-size: 14px;
+      background-color: var(--button-bg);
+      color: var(--button-text);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    select, input {
+      background-color: var(--card);
+      color: var(--text);
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    .movies {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 25px;
+    }
+    .movie {
+      background: var(--card);
+      padding: 12px;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      position: relative;
+      cursor: pointer;
+    }
+    .movie:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 15px rgba(255, 204, 0, 0.5);
+    }
+    .movie img {
+      width: 100%;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    .movie-title {
+      font-size: 1rem;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .movie-rating {
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+      color: gold;
+    }
+    .modal {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: #000;
+      color: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 700px;
+      width: 90%;
+      overflow-y: auto;
+      max-height: 90vh;
+    }
+    .modal iframe {
+      width: 100%;
+      height: 400px;
+      margin-top: 20px;
+    }
+    .close-button {
+      position: absolute;
+      top: 10px;
+      right: 20px;
+      font-size: 1.5rem;
+      color: #ffcc00;
+      cursor: pointer;
+    }
+    .loader {
+      text-align: center;
+      margin: 20px 0;
+      font-size: 18px;
+      color: var(--text);
+    }
+    .empty-message {
+      text-align: center;
+      font-size: 18px;
+      margin-top: 20px;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <h1><img src="filminize_logo_32x32.png" alt="Filminize logo" style="vertical-align: middle; width: 32px; height: 32px; margin-right: 8px;"> Filminize</h1>
+  <div class="controls">
+    <input type="text" id="search" placeholder="">
+    <button id="searchBtn">🔍</button>
+    <select id="sortSelect"></select>
+    <select id="languageSelect">
+      <option value="ru">RU</option>
+      <option value="en">EN</option>
+      <option value="zh">中文</option>
+      <option value="ar">العربية</option>
+      <option value="es">ES</option>
+    </select>
+    <button id="themeToggle">🌙</button>
+    <button id="homeBtn">🏠</button>
+  </div>
+
+  <div class="movies" id="movieList"></div>
+  <div class="loader" id="loader" style="display:none;">Загрузка...</div>
+
+  <div id="modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <span class="close-button" id="closeModal">✖</span>
+      <div id="modalInfo"></div>
+      <div id="trailer"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_KEY = 'ef347ceb979d53743e79eb0ea5018e7d';
+    const BASE_URL = 'https://api.themoviedb.org/3';
+    const IMG_URL = 'https://image.tmdb.org/t/p/w500';
+    const movieList = document.getElementById('movieList');
+    const loader = document.getElementById('loader');
+    const modal = document.getElementById('modal');
+    const modalInfo = document.getElementById('modalInfo');
+    const trailerDiv = document.getElementById('trailer');
+    let currentPage = 1;
+    let loading = false;
+
+    const langMap = {
+      ru: {
+        theme: "🌙 Тема",
+        searchPlaceholder: "Поиск...",
+        sortOptions: {
+          "popularity.desc": "Популярные",
+          "vote_average.desc": "Высокий рейтинг",
+          "release_date.desc": "Новые"
+        }
+      },
+      en: {
+        theme: "🌙 Theme",
+        searchPlaceholder: "Search...",
+        sortOptions: {
+          "popularity.desc": "Popular",
+          "vote_average.desc": "Top Rated",
+          "release_date.desc": "Newest"
+        }
+      },
+      zh: {
+        theme: "🌙 主题",
+        searchPlaceholder: "搜索...",
+        sortOptions: {
+          "popularity.desc": "受欢迎的",
+          "vote_average.desc": "高评分",
+          "release_date.desc": "最新"
+        }
+      },
+      ar: {
+        theme: "🌙 الوضع",
+        searchPlaceholder: "بحث...",
+        sortOptions: {
+          "popularity.desc": "الأكثر شعبية",
+          "vote_average.desc": "الأعلى تقييماً",
+          "release_date.desc": "الأحدث"
+        }
+      },
+      es: {
+        theme: "🌙 Tema",
+        searchPlaceholder: "Buscar...",
+        sortOptions: {
+          "popularity.desc": "Populares",
+          "vote_average.desc": "Mejor calificadas",
+          "release_date.desc": "Nuevas"
+        }
+      }
+    };
+
+    function updateLangText() {
+      const lang = document.getElementById('languageSelect').value;
+      document.getElementById('themeToggle').textContent = langMap[lang].theme;
+      document.getElementById('search').placeholder = langMap[lang].searchPlaceholder;
+      const sortSelect = document.getElementById('sortSelect');
+      sortSelect.innerHTML = '';
+      for (const value in langMap[lang].sortOptions) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = langMap[lang].sortOptions[value];
+        sortSelect.appendChild(option);
+      }
+    }
+
+    async function fetchMovies(page = 1) {
+      if (loading) return;
+      loading = true;
+      loader.style.display = 'block';
+      const lang = document.getElementById('languageSelect').value;
+      const sort = document.getElementById('sortSelect').value;
+      const url = `${BASE_URL}/discover/movie?api_key=${API_KEY}&language=${lang}&sort_by=${sort}&include_adult=false&page=${page}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      renderMovies(data.results);
+      loader.style.display = 'none';
+      loading = false;
+    }
+
+    function renderMovies(movies) {
+      movies.filter(movie => movie.vote_average > 0).forEach(movie => {
+        const card = document.createElement('div');
+        card.className = 'movie';
+        card.innerHTML = `
+          <img src="${IMG_URL + movie.poster_path}" alt="${movie.title}">
+          <div class="movie-title">${movie.title}</div>
+          <div class="movie-rating">⭐ ${movie.vote_average}</div>
+        `;
+        card.onclick = () => showMovieDetails(movie.id);
+        movieList.appendChild(card);
+      });
+    }
+
+    async function showMovieDetails(movieId) {
+      const lang = document.getElementById('languageSelect').value;
+      const res = await fetch(`${BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=${lang}&append_to_response=videos,images,credits`);
+      const data = await res.json();
+      modalInfo.innerHTML = `
+        <h2>${data.title}</h2>
+        <p><strong>Жанры:</strong> ${data.genres.map(g => g.name).join(', ')}</p>
+        <p><strong>Дата выпуска:</strong> ${data.release_date}</p>
+        <p><strong>Описание:</strong> ${data.overview}</p>
+        <p><strong>Актёры:</strong> ${data.credits.cast.slice(0, 5).map(c => c.name).join(', ')}</p>
+      `;
+      const trailer = data.videos.results.find(v => v.type === "Trailer" && v.site === "YouTube");
+      trailerDiv.innerHTML = trailer ? `<iframe src="https://www.youtube.com/embed/${trailer.key}" frameborder="0" allowfullscreen></iframe>` : '';
+      modal.style.display = 'flex';
+    }
+
+    document.getElementById('closeModal').onclick = () => {
+      modal.style.display = 'none';
+    };
+
+    document.getElementById('searchBtn').addEventListener('click', () => {
+      const query = document.getElementById('search').value.trim();
+      if (query) searchMovies(query);
+    });
+
+    async function searchMovies(query) {
+      movieList.innerHTML = '';
+      loader.style.display = 'block';
+      const lang = document.getElementById('languageSelect').value;
+      const url = `${BASE_URL}/search/movie?api_key=${API_KEY}&language=${lang}&query=${encodeURIComponent(query)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      renderMovies(data.results);
+      loader.style.display = 'none';
+    }
+
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const current = document.body.getAttribute('data-theme');
+      const next = current === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    });
+
+    document.getElementById('homeBtn').addEventListener('click', () => {
+      movieList.innerHTML = '';
+      currentPage = 1;
+      fetchMovies();
+    });
+
+    window.addEventListener('scroll', () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+        currentPage++;
+        fetchMovies(currentPage);
+      }
+    });
+
+    document.getElementById('languageSelect').addEventListener('change', () => {
+      updateLangText();
+      movieList.innerHTML = '';
+      currentPage = 1;
+      fetchMovies();
+    });
+
+    window.onload = () => {
+      document.body.setAttribute('data-theme', localStorage.getItem('theme') || 'dark');
+      updateLangText();
+      fetchMovies();
+    };
+  </script>
+</body>
+</html>
+
